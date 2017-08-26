@@ -39,6 +39,9 @@ static int64_t next_wakeup_at;
 /* Idle thread. */
 static struct thread *idle_thread;
 
+/* Manager thread. */
+static struct thread *manager_thread;
+
 /* Initial thread, the thread running init.c:main(). */
 static struct thread *initial_thread;
 
@@ -70,6 +73,7 @@ bool thread_mlfqs;
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
+static void manager ();
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
@@ -118,6 +122,7 @@ thread_start (void)
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
+
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   /* Start preemptive thread scheduling. */
@@ -125,6 +130,8 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+  thread_create ("manager", PRI_MAX, manager, NULL);
+
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -146,30 +153,11 @@ thread_tick (void)
   else
     kernel_ticks++;
 
-  long long ticks = timer_ticks ();
-  if (ticks >= next_wakeup_at)
-  {
-    struct list_elem *front = list_front (&sleepers_list);
-    struct thread *t = list_entry (front, struct thread, sleepers_elem);
-    if (t->wakeup_at <= next_wakeup_at)
-    {
-      list_pop_front (&sleepers_list);
-      thread_unblock (t);
-
-      if (list_empty (&sleepers_list))
-        next_wakeup_at = INT64_MAX;
-      else
-      {
-        front = list_front (&sleepers_list);
-        t = list_entry (front, struct thread, sleepers_elem);
-        next_wakeup_at = t->wakeup_at;
-      }
-    }
-    /* Ideally following block should never run */
-    else
-      next_wakeup_at = t->wakeup_at;
-  }
-
+  uint64_t ticks = timer_ticks ();
+  if (ticks >= next_wakeup_at && manager_thread->status == THREAD_BLOCKED)
+      thread_unblock (manager_thread);
+  
+  
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
@@ -610,6 +598,47 @@ idle (void *idle_started_ UNUSED)
          7.11.1 "HLT Instruction". */
       asm volatile ("sti; hlt" : : : "memory");
     }
+}
+
+
+void
+timer_wakeup ()
+{
+  enum intr_level old_level = intr_disable ();
+  while (!list_empty (&sleepers_list))
+  {
+    struct thread *t = list_entry (list_front (&sleepers_list),
+                                  struct thread, sleepers_elem);
+    if (t->wakeup_at <= next_wakeup_at)
+    {
+      list_pop_front(&sleepers_list);
+      thread_unblock(t);
+    }
+    else
+      break;
+  }
+
+  if (list_empty (&sleepers_list))
+    next_wakeup_at = INT64_MAX;
+  else
+    next_wakeup_at = list_entry(list_front(&sleepers_list),
+                                struct thread, sleepers_elem)->wakeup_at;
+
+  intr_set_level(old_level);
+}
+
+void manager ()
+{
+  manager_thread = thread_current ();
+
+  while (true)
+  {
+    intr_disable ();
+    thread_block ();
+    intr_enable ();
+
+    timer_wakeup ();    
+  }
 }
 
 /* Function used as the basis for a kernel thread. */
