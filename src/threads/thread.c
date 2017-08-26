@@ -48,6 +48,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Lock used by timer_wakeup() and thread_block_till(). */
+static struct lock sleepers_lock;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -102,6 +105,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  lock_init (&sleepers_lock);
   list_init (&ready_list);
   list_init (&all_list);
   list_init (&sleepers_list);
@@ -311,12 +315,19 @@ thread_block_till (int64_t wakeup_at)
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
-  old_level = intr_disable ();
+
+  lock_acquire (&sleepers_lock);
 
   cur->wakeup_at = wakeup_at;
   if (wakeup_at < next_wakeup_at)
     next_wakeup_at = wakeup_at;
   list_insert_ordered (&sleepers_list, &cur->sleepers_elem, before, NULL);
+
+  /* Interrupts are disabled at this time because:
+     1. thread_block requires interrupts to be disabled.
+     2. manager should not preempt before the thread is unblocked.*/
+  old_level = intr_disable ();
+  lock_release (&sleepers_lock);
   thread_block ();
   intr_set_level (old_level);
 }
@@ -604,7 +615,7 @@ idle (void *idle_started_ UNUSED)
 void
 timer_wakeup ()
 {
-  enum intr_level old_level = intr_disable ();
+  lock_acquire (&sleepers_lock);
   while (!list_empty (&sleepers_list))
   {
     struct thread *t = list_entry (list_front (&sleepers_list),
@@ -623,8 +634,7 @@ timer_wakeup ()
   else
     next_wakeup_at = list_entry(list_front(&sleepers_list),
                                 struct thread, sleepers_elem)->wakeup_at;
-
-  intr_set_level(old_level);
+  lock_release (&sleepers_lock);
 }
 
 void manager ()
