@@ -125,7 +125,7 @@ sema_up (struct semaphore *sema)
       thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
     */  
-}
+  }
   sema->value++;
   intr_set_level (old_level);
   
@@ -324,7 +324,7 @@ cond_wait (struct condition *cond, struct lock *lock)
 /* Comparision function used for getting the semaphore element corresponding 
    to highest priority in condition wait list. */
 bool
-cond_cmp (struct list_elem *a, struct list_elem *b, void *aux)
+cond_cmp (struct list_elem *a, struct list_elem *b, void *aux UNUSED)
 {
   struct semaphore_elem *ma = list_entry (a, struct semaphore_elem, elem);
   struct semaphore_elem *mb = list_entry (b, struct semaphore_elem, elem);
