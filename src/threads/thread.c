@@ -546,7 +546,8 @@ thread_get_effective_priority (struct thread *t)
   if(!list_empty (&t->locks_acquired))
   {
     int max_priority = t->priority;
-    for (struct list_elem *e = list_begin (&t->locks_acquired);
+    struct list_elem *e;
+    for (e = list_begin (&t->locks_acquired);
          e != list_end (&t->locks_acquired);
          e = list_next (e))
     {
@@ -555,7 +556,8 @@ thread_get_effective_priority (struct thread *t)
 
       if(!list_empty (waiters))
       {
-        for (struct list_elem *f = list_begin (waiters);
+        struct list_elem *f;
+        for (f = list_begin (waiters);
              f != list_end (waiters);
              f = list_next (f))
         {
