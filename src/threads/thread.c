@@ -86,7 +86,7 @@ bool thread_mlfqs;
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
-static void manager (void);
+static void manager (void *aux UNUSED);
 static void bsd_scheduler (void);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -723,7 +723,7 @@ timer_wakeup ()
 }
 
 /* This wakes up the appropriate blocked threads at each next_wakeup_at. */
-void manager ()
+void manager (void *aux UNUSED)
 {
   manager_thread = thread_current ();
   enum intr_level old_level;
