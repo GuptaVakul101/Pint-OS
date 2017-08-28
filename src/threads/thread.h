@@ -107,7 +107,8 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
     struct list locks_acquired;         /* List of locks acquired by a thread */
-  };
+    bool no_yield;
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

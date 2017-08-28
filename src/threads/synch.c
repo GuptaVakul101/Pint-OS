@@ -131,7 +131,12 @@ sema_up (struct semaphore *sema)
   
   /* The thread unblocked might have higher priority than the current thread.
      We must yield to that thread in this case. */
-  thread_yield();
+  struct thread *cur = thread_current ();
+  if (cur->no_yield == false)
+    thread_yield();
+  else
+    cur->no_yield = false;
+    
 }
 
 static void sema_test_helper (void *sema_);

@@ -338,13 +338,14 @@ void
 thread_block_till (int64_t wakeup_at)
 {
   struct thread *cur = thread_current ();
+  cur->no_yield = true;
   enum intr_level old_level;
 
   lock_acquire (&sleepers_lock);
   
-  /* Interrupts are disabled at this time because:
-     1. thread_block requires interrupts to be disabled.
-     2. manager should not preempt before the thread is unblocked.
+  /* Earlier interrupts were disabled here:
+     Problem faced ealier has been resolved:
+
      Ideally we should be able to disable interrupts just before lock_release
      and code sohuld function properly, but alarm-simultaneous failed in that
      scenario.
@@ -354,14 +355,18 @@ thread_block_till (int64_t wakeup_at)
      so "thread 2" (alarm simultaneous) never got blocked while manager started
      to wake it up from sleepers list. */
 
-  old_level = intr_disable ();
 
   cur->wakeup_at = wakeup_at;
   if (wakeup_at < next_wakeup_at)
     next_wakeup_at = wakeup_at;
 
   list_insert_ordered (&sleepers_list, &cur->sleepers_elem, before, NULL);
-
+  
+  /* Interrupts are disabled at this time because:
+     1. thread_block requires interrupts to be disabled.
+     2. manager should not preempt before the thread is unblocked. */
+  
+  old_level = intr_disable ();
   lock_release (&sleepers_lock);
   thread_block ();
   intr_set_level (old_level);
@@ -836,6 +841,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->old_priority = priority;
+  t->no_yield = false;
   t->wakeup_at = -1;
   /* t->wakeup's initial value is never used, since whenever the thread will 
      call timer_sleep this variable will be changes and it is never used
