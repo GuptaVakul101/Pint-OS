@@ -148,6 +148,7 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+
   thread_create ("manager", PRI_MAX, manager, NULL);
   thread_create ("bsd_scheduler", PRI_MAX, bsd_scheduler, NULL);
 }
