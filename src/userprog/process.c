@@ -104,6 +104,8 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  int i;
+  for (i = 0; i< 1<<20; i++);
   return -1;
 }
 
@@ -327,7 +329,7 @@ load (const char *cmd_line_input, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp, file_name, args))
     goto done;
-  test_stack (*esp);
+  /* test_stack (*esp); */
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
