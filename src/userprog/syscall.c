@@ -3,24 +3,30 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+#include <string.h>
 
 static void syscall_handler (struct intr_frame *);
+static void valid_up (const void *);
 
-static void
-halt (struct intr_frame *f)
+static int
+halt (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-exit (struct intr_frame *f)
+int
+exit (void *esp)
 {
-  void *esp = f->esp;
-  esp += sizeof (int);
-
-  int status = *((int *)esp);
-  esp += sizeof (int);
+  int status = 0;
+  if (esp != NULL){
+    status = *((int *)esp);
+    esp += sizeof (int);
+  }
+  else {
+    status = -1;
+  }
   
   char *name = thread_current ()->name, *save;
   name = strtok_r (name, " ", &save);
@@ -29,67 +35,60 @@ exit (struct intr_frame *f)
   thread_exit ();
 }
 
-static void
-exec (struct intr_frame *f)
+static int
+exec (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-wait (struct intr_frame *f)
+static int
+wait (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-create (struct intr_frame *f)
+static int
+create (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-remove (struct intr_frame *f)
+static int
+remove (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-open (struct intr_frame *f)
+static int
+open (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-filesize (struct intr_frame *f)
+static int
+filesize (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-read (struct intr_frame *f)
+static int
+read (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-write (struct intr_frame *f)
+static int
+write (void *esp)
 {
-  void *esp = f->esp;
-  esp += sizeof(int);
-
   int fd = *((int *)esp);
   esp += sizeof (int);
 
+  valid_up (esp);
   const void *buffer = *((void **)esp);
+  valid_up (buffer);
   esp += sizeof (void *);
 
+  valid_up (esp);
   unsigned size = *((unsigned *)esp);
   esp += sizeof (unsigned);
   
@@ -100,80 +99,72 @@ write (struct intr_frame *f)
     {
       putchar (*((char *) buffer + i));
     }
+    return i;
   }
+  return 0;
 }
 
-static void
-seek (struct intr_frame *f)
+static int
+seek (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-tell (struct intr_frame *f)
+static int
+tell (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-close (struct intr_frame *f)
+static int
+close (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-mmap (struct intr_frame *f)
+static int
+mmap (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-munmap (struct intr_frame *f)
+static int
+munmap (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-chdir (struct intr_frame *f)
+static int
+chdir (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-mkdir (struct intr_frame *f)
+static int
+mkdir (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-readdir (struct intr_frame *f)
+static int
+readdir (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-isdir (struct intr_frame *f)
+static int
+isdir (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void
-inumber (struct intr_frame *f)
+static int
+inumber (void *esp)
 {
-  printf ("system call!\n");
   thread_exit ();
 }
 
-static void (*syscalls []) (struct intr_frame *) =
+static int (*syscalls []) (void *) =
   {
     halt,
     exit,
@@ -209,18 +200,35 @@ syscall_init (void)
 
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
-{  
-  int syscall_num = *((int *) f->esp);
+{
+  void *esp = f->esp;
 
+  valid_up (esp);
+  int syscall_num = *((int *) esp);
+  esp += sizeof(int);
+
+  //printf("\nSys: %d", syscall_num);
+  valid_up (esp);
   if (syscall_num >= 0 && syscall_num < num_calls)
   {
-    void (*function) (struct intr_frame *) = syscalls[syscall_num];
-    function (f);
+    int (*function) (void *) = syscalls[syscall_num];
+    int ret = function (esp);
+    f->eax = ret;
   }
   else
   {
     /* TODO:: Raise Exception */
     printf ("\nError, invalid syscall number.");
     thread_exit ();
+  }
+}
+
+static void
+valid_up (const void *ptr)
+{
+  uint32_t *pd = thread_current ()->pagedir;
+  if ( ptr == NULL || !is_user_vaddr (ptr) || pagedir_get_page (pd, ptr) == NULL)
+  {
+    exit (NULL);
   }
 }

@@ -105,7 +105,10 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   int i;
-  for (i = 0; i< 1<<20; i++);
+  for (i = 0; i< 1<<10; i++)
+  {
+    thread_yield ();
+  }
   return -1;
 }
 
