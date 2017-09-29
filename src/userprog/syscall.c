@@ -73,6 +73,14 @@ wait (void *esp)
   int pid = *((int *) esp);
   esp += sizeof (int);
 
+  
+  if (pid >=0 && pid < 128)
+  {
+    //TODO:: implement wait
+  }
+  else
+    exit(NULL);
+
   thread_exit ();
 }
 
