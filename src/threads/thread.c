@@ -264,7 +264,10 @@ thread_create (const char *name, int priority,
   
   /* We should yield to the added thread if it has a higher priority than
      the current thread.*/
-  thread_yield ();
+  if (intr_context ())
+    intr_yield_on_return ();
+  else
+    thread_yield (); 
 
   return tid;
 }
@@ -534,8 +537,12 @@ thread_set_priority (int new_priority)
   /* Thread must yield to higher priority thread if it exists, whenever its
      own priority decreases. */
   t->priority = new_priority;
-  if(new_priority < cur_priority)
-    thread_yield ();
+  if(new_priority < cur_priority){
+    if (intr_context ())
+      intr_yield_on_return ();
+    else
+      thread_yield (); 
+  }
 }
 
 /* Returns the current thread's effective priority. */
@@ -639,8 +646,12 @@ thread_set_nice (int nice UNUSED)
   struct thread *t = thread_current ();
   t->nice = nice;
   thread_update_priority (t);
+
   /* If due to nice value change the priority decreases then it must yield. */
-  thread_yield (); 
+  if (intr_context ())
+    intr_yield_on_return ();
+  else
+    thread_yield (); 
 }
 
 /* Returns the current thread's nice value. */
