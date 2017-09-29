@@ -106,7 +106,7 @@ wait (void *esp)
   /* Either wait has already been called or 
      given pid is not a child of current thread. */
   if (child == NULL) 
-    exit (NULL);
+    return -1;
     
   sema_down (&child->sema_terminated);
   int status = child->return_status;
