@@ -175,7 +175,9 @@ thread_tick (void)
   
   uint64_t ticks = timer_ticks ();
   if (ticks >= next_wakeup_at && manager_thread->status == THREAD_BLOCKED)
-      thread_unblock (manager_thread);
+  {
+    thread_unblock (manager_thread);
+  }
 
   if (ticks % TIMER_FREQ == 0)
     schedule_sec = true;
@@ -187,9 +189,11 @@ thread_tick (void)
     intr_yield_on_return ();
   }
 
-  if ((schedule_sec || schedule_slice)
+  if ((schedule_sec || schedule_slice) && thread_mlfqs
       && bsd_scheduler_thread->status == THREAD_BLOCKED)
+  {
     thread_unblock (bsd_scheduler_thread);
+  }
 }
 
 /* Prints thread statistics. */
@@ -556,7 +560,7 @@ thread_get_priority (void)
 int
 thread_get_effective_priority (struct thread *t)
 {
-  if(!list_empty (&t->locks_acquired))
+  if(!list_empty (&t->locks_acquired) && !thread_mlfqs)
   {
     int max_priority = t->priority;
     struct list_elem *e;
@@ -595,7 +599,8 @@ thread_update_priority (struct thread *t)
 {
   enum intr_level old_level = intr_disable ();
   int aux = _ADD_INT (_DIVIDE_INT (t->recent_cpu, 4), 2*t->nice);
-  t->priority = _TO_INT_ZERO (_INT_SUB (PRI_MAX, aux));
+  int val = _TO_INT_ZERO (_INT_SUB (PRI_MAX, aux));
+  t->priority = val > PRI_MAX ? PRI_MAX : val < PRI_MIN ? PRI_MIN : val;   
   intr_set_level (old_level);
 }
 
