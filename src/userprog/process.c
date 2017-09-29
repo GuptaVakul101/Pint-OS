@@ -77,10 +77,25 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
+  struct thread *cur = thread_current ();
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  if (!success){
+    sema_up (&cur->sema_ready);
+    sema_down (&cur->sema_ack);
+
+    enum intr_level old_level = intr_disable ();
+    cur->no_yield = true;
+    sema_up (&cur->sema_terminated);
+    thread_block ();
+    intr_set_level (old_level);
+
     thread_exit ();
+  }
+
+  cur->load_complete = true;
+  sema_up (&cur->sema_ready);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -104,38 +119,19 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  /* struct thread *t = thread_current ();
-  struct list_elem *e;
-  struct thread *child = NULL;
-  
-  for (e = list_begin (&t->children);
-       e!= list_end (&t->children); e = list_next (e))
-  {
-    struct thread *this = list_entry (e, struct thread, parent_elem);
-    if (this->tid == child_tid)
-    {
-      child = this;
-      break;
-    }
-  }
-  */
-  
+  struct thread *child = get_child_thread_from_id (child_tid);
+
   /* Either wait has already been called or 
      given tid is not a child of current thread. */
-  /*
   if (child == NULL) 
     return -1;
   
-  while (child->status != THREAD_DYING);
-    
-  return -1;
-  */
+  sema_down (&child->sema_terminated);
+  int status = child->return_status;
+  list_remove (&child->parent_elem);
+  thread_unblock (child);
 
-  int i;
-  for (i = 0; i< 1<<10; i++)
-    thread_yield ();
-
-  return -1;
+  return status;
 }
 
 /* Free the current process's resources. */

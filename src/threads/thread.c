@@ -864,7 +864,6 @@ init_thread (struct thread *t, const char *name, int priority)
   }
   
   /* Set parent pointer, initialise children list, push to parent list. */
-  /*
   if (t != initial_thread)
   {
     t->parent = thread_current();
@@ -872,8 +871,13 @@ init_thread (struct thread *t, const char *name, int priority)
   }
   else
     t->parent = NULL;
+  
   list_init (&t->children);
-  */
+  sema_init (&t->sema_ready, 0);
+  sema_init (&t->sema_terminated, 0);
+  sema_init (&t->sema_ack, 0);
+  t->return_status = -1;
+  t->load_complete = false;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -989,6 +993,27 @@ allocate_tid (void)
 
   return tid;
 }
+
+struct thread *
+get_child_thread_from_id (int id)
+{
+  struct thread *t = thread_current ();
+  struct list_elem *e;
+  struct thread *child = NULL;
+  
+  for (e = list_begin (&t->children);
+       e!= list_end (&t->children); e = list_next (e))
+  {
+    struct thread *this = list_entry (e, struct thread, parent_elem);
+    if (this->tid == id)
+    {
+      child = this;
+      break;
+    }
+  }
+  return child;
+}
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */

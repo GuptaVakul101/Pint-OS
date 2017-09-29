@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -116,6 +117,11 @@ struct thread
                                            the current thread. */
 
     struct file *files[MAX_FILES];
+    struct semaphore sema_ready;
+    struct semaphore sema_terminated;
+    struct semaphore sema_ack;
+    int return_status;
+    bool load_complete;
 };
 
 /* If false (default), use round-robin scheduler.
@@ -167,5 +173,7 @@ bool before (const struct list_elem*, const struct list_elem*, void*);
 
 void thread_priority_temporarily_up (void);
 void thread_priority_restore (void);
+
+struct thread *get_child_thread_from_id (int);
 
 #endif /* threads/thread.h */
