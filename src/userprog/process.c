@@ -144,6 +144,13 @@ process_exit (void)
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
+  
+  if (cur->executable_file)
+  {
+    file_close (cur->executable_file);
+    cur->executable_file = NULL;
+  }
+  
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -276,7 +283,10 @@ load (const char *cmd_line_input, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
-
+  
+  file_deny_write (file);
+  t->executable_file = file;
+  
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -362,7 +372,7 @@ load (const char *cmd_line_input, void (**eip) (void), void **esp)
   success = true;
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /* We shall close file at process_exit -> file_close (file); */
   return success;
 }
 

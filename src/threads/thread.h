@@ -116,6 +116,7 @@ struct thread
     struct list children;               /* List of children of 
                                            the current thread. */
 
+    struct file *executable_file;
     struct file *files[MAX_FILES];
     struct semaphore sema_ready;
     struct semaphore sema_terminated;

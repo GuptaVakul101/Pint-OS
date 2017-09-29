@@ -873,6 +873,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->locks_acquired);
   list_push_back (&all_list, &t->allelem);
 
+  t->executable_file = NULL;
   int i;
   for (i = 0; i<MAX_FILES; i++)
   {
