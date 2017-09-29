@@ -856,6 +856,24 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
   list_init (&t->locks_acquired);
   list_push_back (&all_list, &t->allelem);
+
+  int i;
+  for (i = 0; i<MAX_FILES; i++)
+  {
+    t->files[i] = NULL;
+  }
+  
+  /* Set parent pointer, initialise children list, push to parent list. */
+  /*
+  if (t != initial_thread)
+  {
+    t->parent = thread_current();
+    list_push_back (&(t->parent->children), &t->parent_elem);
+  }
+  else
+    t->parent = NULL;
+  list_init (&t->children);
+  */
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

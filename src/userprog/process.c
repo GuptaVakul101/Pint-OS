@@ -104,11 +104,37 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  /* struct thread *t = thread_current ();
+  struct list_elem *e;
+  struct thread *child = NULL;
+  
+  for (e = list_begin (&t->children);
+       e!= list_end (&t->children); e = list_next (e))
+  {
+    struct thread *this = list_entry (e, struct thread, parent_elem);
+    if (this->tid == child_tid)
+    {
+      child = this;
+      break;
+    }
+  }
+  */
+  
+  /* Either wait has already been called or 
+     given tid is not a child of current thread. */
+  /*
+  if (child == NULL) 
+    return -1;
+  
+  while (child->status != THREAD_DYING);
+    
+  return -1;
+  */
+
   int i;
   for (i = 0; i< 1<<10; i++)
-  {
     thread_yield ();
-  }
+
   return -1;
 }
 

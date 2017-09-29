@@ -24,6 +24,7 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define MAX_FILES 128
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -108,6 +109,13 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
     struct list locks_acquired;         /* List of locks acquired by a thread */
     bool no_yield;
+
+    struct list_elem parent_elem;       /* list_elem for parent's children list */
+    struct thread *parent;              /* Pointer to parent of the list. */
+    struct list children;               /* List of children of 
+                                           the current thread. */
+
+    struct file *files[MAX_FILES];
 };
 
 /* If false (default), use round-robin scheduler.
