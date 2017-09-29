@@ -16,6 +16,7 @@ static void valid_up (const void *);
 static void validate (const void *, size_t);
 static void validate_string (const char *);
 static void close_file (int);
+static int is_valid_fd (int);
 
 static int
 halt (void *esp)
@@ -56,12 +57,22 @@ exit (void *esp)
 static int
 exec (void *esp)
 {
+  validate (esp, sizeof (char *));
+  const char *file_name = *((char **) esp);
+  esp += sizeof (char *);
+
+  validate_string (file_name);
+
   thread_exit ();
 }
 
 static int
 wait (void *esp)
 {
+  validate (esp, sizeof (int));
+  int pid = *((int *) esp);
+  esp += sizeof (int);
+
   thread_exit ();
 }
 
@@ -143,14 +154,15 @@ filesize (void *esp)
 
   struct thread *t = thread_current ();
 
-  if (t->files[fd] == NULL)
-    return -1;
-  
-  lock_acquire (&file_lock);
-  int size = file_length (t->files[fd]);
-  lock_release (&file_lock);
+  if (is_valid_fd (fd) && t->files[fd] != NULL)
+  {  
+    lock_acquire (&file_lock);
+    int size = file_length (t->files[fd]);
+    lock_release (&file_lock);
 
-  return size;
+    return size;
+  }
+  return -1;
 }
 
 static int
@@ -182,7 +194,7 @@ read (void *esp)
     lock_release (&file_lock);
     return i;
   }
-  else if (fd >=2 && t->files[fd] != NULL)
+  else if (is_valid_fd (fd) && fd >=2 && t->files[fd] != NULL)
   {
     lock_acquire (&file_lock);
     int read = file_read (t->files[fd], buffer, size);
@@ -222,7 +234,7 @@ write (void *esp)
     lock_release (&file_lock);
     return i;
   }
-  else if (fd >=2 && t->files[fd] != NULL)
+  else if (is_valid_fd (fd) && fd >=2 && t->files[fd] != NULL)
   {
     lock_acquire (&file_lock);
     int written = file_write (t->files[fd], buffer, size);
@@ -245,7 +257,7 @@ seek (void *esp)
 
   struct thread *t = thread_current ();
 
-  if (t->files[fd] != NULL)
+  if (is_valid_fd (fd) && t->files[fd] != NULL)
   {
     lock_acquire (&file_lock);
     file_seek (t->files[fd], position);
@@ -262,14 +274,13 @@ tell (void *esp)
 
   struct thread *t = thread_current ();
 
-  if (t->files[fd] != NULL)
+  if (is_valid_fd (fd) && t->files[fd] != NULL)
   {
     lock_acquire (&file_lock);
     int position = file_tell (t->files[fd]);
     lock_release (&file_lock);
     return position;
   }
-
   return -1;
 }
 
@@ -280,7 +291,8 @@ close (void *esp)
   int fd = *((int *) esp);
   esp += sizeof (int);
 
-  close_file (fd);
+  if (is_valid_fd (fd))
+    close_file (fd);
 }
 
 static int
@@ -399,6 +411,12 @@ close_file (int fd)
     t->files[fd] = NULL;
     lock_release (&file_lock);
   }
+}
+
+static int
+is_valid_fd (int fd)
+{
+  return fd >= 0 && fd < MAX_FILES; 
 }
 
 static void
