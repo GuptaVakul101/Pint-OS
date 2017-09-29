@@ -15,6 +15,7 @@ static void syscall_handler (struct intr_frame *);
 static void valid_up (const void *);
 static void validate (const void *, size_t);
 static void validate_string (const char *);
+static void close_file (int);
 
 static int
 halt (void *esp)
@@ -34,8 +35,18 @@ exit (void *esp)
   else {
     status = -1;
   }
+
+  struct thread *t = thread_current ();
+
+  int i;
+  for (i = 2; i<MAX_FILES; i++)
+  {
+    if (t->files[i] != NULL){
+      close_file (i);
+    }
+  }
   
-  char *name = thread_current ()->name, *save;
+  char *name = t->name, *save;
   name = strtok_r (name, " ", &save);
   
   printf ("%s: exit(%d)\n", name, status);
@@ -57,13 +68,37 @@ wait (void *esp)
 static int
 create (void *esp)
 {
-  
+  validate (esp, sizeof(char *));
+  const char *file_name = *((char **) esp);
+  esp += sizeof (char *);
+
+  validate_string (file_name);
+
+  validate (esp, sizeof(unsigned));
+  unsigned initial_size = *((unsigned *) esp);
+  esp += sizeof (unsigned);
+
+  lock_acquire (&file_lock);
+  int status = filesys_create (file_name, initial_size);
+  lock_release (&file_lock);
+
+  return status;
 }
 
 static int
 remove (void *esp)
 {
-  thread_exit ();
+  validate (esp, sizeof(char *));
+  const char *file_name = *((char **) esp);
+  esp += sizeof (char *);
+
+  validate_string (file_name);
+
+  lock_acquire (&file_lock);
+  int status = filesys_remove (file_name);
+  lock_release (&file_lock);
+
+  return status;
 }
 
 static int
@@ -121,7 +156,40 @@ filesize (void *esp)
 static int
 read (void *esp)
 {
-  thread_exit ();
+  validate (esp, sizeof(int));
+  int fd = *((int *)esp);
+  esp += sizeof (int);
+
+  validate (esp, sizeof(void *));
+  const void *buffer = *((void **) esp);
+  esp += sizeof (void *);
+
+  validate (esp, sizeof(unsigned));
+  unsigned size = *((unsigned *) esp);
+  esp += sizeof (unsigned);
+  
+  validate (buffer, size);
+
+  struct thread *t = thread_current ();
+  if (fd == STDIN_FILENO)
+  {
+    lock_acquire (&file_lock);
+
+    int i;
+    for (i = 0; i<size; i++)
+      *((uint8_t *) buffer+i) = input_getc ();
+
+    lock_release (&file_lock);
+    return i;
+  }
+  else if (fd >=2 && t->files[fd] != NULL)
+  {
+    lock_acquire (&file_lock);
+    int read = file_read (t->files[fd], buffer, size);
+    lock_release (&file_lock);
+    return read;
+  }
+  return 0;
 }
 
 static int
@@ -167,19 +235,52 @@ write (void *esp)
 static int
 seek (void *esp)
 {
-  thread_exit ();
+  validate (esp, sizeof(int));
+  int fd = *((int *)esp);
+  esp += sizeof (int);
+
+  validate (esp, sizeof(unsigned));
+  unsigned position = *((unsigned *) esp);
+  esp += sizeof (unsigned);
+
+  struct thread *t = thread_current ();
+
+  if (t->files[fd] != NULL)
+  {
+    lock_acquire (&file_lock);
+    file_seek (t->files[fd], position);
+    lock_release (&file_lock);
+  }
 }
 
 static int
 tell (void *esp)
 {
-  thread_exit ();
+  validate (esp, sizeof(int));
+  int fd = *((int *)esp);
+  esp += sizeof (int);
+
+  struct thread *t = thread_current ();
+
+  if (t->files[fd] != NULL)
+  {
+    lock_acquire (&file_lock);
+    int position = file_tell (t->files[fd]);
+    lock_release (&file_lock);
+    return position;
+  }
+
+  return -1;
 }
 
 static int
 close (void *esp)
 {
-  thread_exit ();
+  validate (esp, sizeof(int));
+  int fd = *((int *) esp);
+  esp += sizeof (int);
+
+  close_file (fd);
 }
 
 static int
@@ -284,6 +385,19 @@ syscall_handler (struct intr_frame *f UNUSED)
     /* TODO:: Raise Exception */
     printf ("\nError, invalid syscall number.");
     thread_exit ();
+  }
+}
+
+static void
+close_file (int fd)
+{
+  struct thread *t = thread_current ();
+  if (t->files[fd] != NULL)
+  {
+    lock_acquire (&file_lock);
+    file_close (t->files[fd]);
+    t->files[fd] = NULL;
+    lock_release (&file_lock);
   }
 }
 
