@@ -167,6 +167,12 @@ paging_init (void)
   extern char _start, _end_kernel_text;
 
   pd = base_page_dir = palloc_get_page (PAL_ASSERT | PAL_ZERO);
+
+  //DEBUG STATEMENTS
+  printf ("_start and _end_kernel_text are at: %p, %p\n",
+          &_start, &_end_kernel_text);
+  printf ("base_page_dir is at: %p\n", base_page_dir);
+
   pt = NULL;
   for (page = 0; page < ram_pages; page++) 
     {
@@ -184,6 +190,11 @@ paging_init (void)
 
       pt[pte_idx] = pte_create_kernel (vaddr, !in_kernel_text);
     }
+
+  //DEBUG STATEMENTS
+  printf("first pde_idx %d, first pde 0x%08x, first pte 0x%08x\n",
+         pd_no(ptov(0)), pd[pd_no(ptov(0))],
+         pde_get_pt(pd[pd_no(ptov(0))])[0]);
 
   /* Store the physical address of the page directory into CR3
      aka PDBR (page directory base register).  This activates our
