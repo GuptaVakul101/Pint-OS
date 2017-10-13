@@ -1,23 +1,23 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
+#include "threads/synch.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
-#include <string.h>
-#include "threads/synch.h"
 #include "userprog/process.h"
-
-/* Lock for file system calls. */
-static struct lock file_lock;
+#include "vm/page.h"
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
-static void valid_up (const void *);
-static void validate (const void *, size_t);
-static void validate_string (const char *);
+static void valid_up (const void*, const void *);
+static void validate (const void*, const void *, size_t);
+static void validate_string (const void *, const char *);
 static void close_file (int);
 static int is_valid_fd (int);
+static void is_writable (const void *);
 
 static int
 halt (void *esp)
@@ -30,7 +30,7 @@ exit (void *esp)
 {
   int status = 0;
   if (esp != NULL){
-    validate (esp, sizeof(int));
+    validate (esp, esp, sizeof(int));
     status = *((int *)esp);
     esp += sizeof (int);
   }
@@ -47,11 +47,15 @@ exit (void *esp)
       close_file (i);
     }
   }
+
+  destroy_spt (&t->supp_page_table);
   
   char *name = t->name, *save;
   name = strtok_r (name, " ", &save);
-  
+
+  lock_acquire (&file_lock);
   printf ("%s: exit(%d)\n", name, status);
+  lock_release (&file_lock);
 
   t->return_status = status;
   
@@ -72,11 +76,11 @@ exit (void *esp)
 static int
 exec (void *esp)
 {
-  validate (esp, sizeof (char *));
+  validate (esp, esp, sizeof (char *));
   const char *file_name = *((char **) esp);
   esp += sizeof (char *);
 
-  validate_string (file_name);
+  validate_string (esp, file_name);
 
   lock_acquire (&file_lock);
   tid_t tid = process_execute (file_name);
@@ -97,7 +101,7 @@ exec (void *esp)
 static int
 wait (void *esp)
 {
-  validate (esp, sizeof (int));
+  validate (esp, esp, sizeof (int));
   int pid = *((int *) esp);
   esp += sizeof (int);
 
@@ -118,13 +122,13 @@ wait (void *esp)
 static int
 create (void *esp)
 {
-  validate (esp, sizeof(char *));
+  validate (esp, esp, sizeof(char *));
   const char *file_name = *((char **) esp);
   esp += sizeof (char *);
 
-  validate_string (file_name);
+  validate_string (esp, file_name);
 
-  validate (esp, sizeof(unsigned));
+  validate (esp, esp, sizeof(unsigned));
   unsigned initial_size = *((unsigned *) esp);
   esp += sizeof (unsigned);
 
@@ -138,11 +142,11 @@ create (void *esp)
 static int
 remove (void *esp)
 {
-  validate (esp, sizeof(char *));
+  validate (esp, esp, sizeof(char *));
   const char *file_name = *((char **) esp);
   esp += sizeof (char *);
 
-  validate_string (file_name);
+  validate_string (esp, file_name);
 
   lock_acquire (&file_lock);
   int status = filesys_remove (file_name);
@@ -154,11 +158,11 @@ remove (void *esp)
 static int
 open (void *esp)
 {
-  validate (esp, sizeof(char *));
+  validate (esp, esp, sizeof(char *));
   const char *file_name = *((char **) esp);
   esp += sizeof (char *);
 
-  validate_string (file_name);
+  validate_string (esp, file_name);
   
   lock_acquire (&file_lock);
   struct file *f = filesys_open (file_name);
@@ -187,7 +191,7 @@ open (void *esp)
 static int
 filesize (void *esp)
 {
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int fd = *((int *) esp);
   esp += sizeof (int);
 
@@ -207,19 +211,19 @@ filesize (void *esp)
 static int
 read (void *esp)
 {
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int fd = *((int *)esp);
   esp += sizeof (int);
 
-  validate (esp, sizeof(void *));
+  validate (esp, esp, sizeof(void *));
   const void *buffer = *((void **) esp);
   esp += sizeof (void *);
 
-  validate (esp, sizeof(unsigned));
+  validate (esp, esp, sizeof(unsigned));
   unsigned size = *((unsigned *) esp);
   esp += sizeof (unsigned);
   
-  validate (buffer, size);
+  validate (esp, buffer, size);
 
   struct thread *t = thread_current ();
   if (fd == STDIN_FILENO)
@@ -235,6 +239,7 @@ read (void *esp)
   }
   else if (is_valid_fd (fd) && fd >=2 && t->files[fd] != NULL)
   {
+    is_writable (buffer);
     lock_acquire (&file_lock);
     int read = file_read (t->files[fd], buffer, size);
     lock_release (&file_lock);
@@ -246,19 +251,19 @@ read (void *esp)
 static int
 write (void *esp)
 {
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int fd = *((int *)esp);
   esp += sizeof (int);
 
-  validate (esp, sizeof(void *));
+  validate (esp, esp, sizeof(void *));
   const void *buffer = *((void **) esp);
   esp += sizeof (void *);
 
-  validate (esp, sizeof(unsigned));
+  validate (esp, esp, sizeof(unsigned));
   unsigned size = *((unsigned *) esp);
   esp += sizeof (unsigned);
   
-  validate (buffer, size);
+  validate (esp, buffer, size);
   
   struct thread *t = thread_current ();
   if (fd == STDOUT_FILENO)
@@ -286,11 +291,11 @@ write (void *esp)
 static int
 seek (void *esp)
 {
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int fd = *((int *)esp);
   esp += sizeof (int);
 
-  validate (esp, sizeof(unsigned));
+  validate (esp, esp, sizeof(unsigned));
   unsigned position = *((unsigned *) esp);
   esp += sizeof (unsigned);
 
@@ -307,7 +312,7 @@ seek (void *esp)
 static int
 tell (void *esp)
 {
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int fd = *((int *)esp);
   esp += sizeof (int);
 
@@ -326,7 +331,7 @@ tell (void *esp)
 static int
 close (void *esp)
 {
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int fd = *((int *) esp);
   esp += sizeof (int);
 
@@ -337,43 +342,43 @@ close (void *esp)
 static int
 mmap (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int
 munmap (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int
 chdir (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int
 mkdir (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int
 readdir (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int
 isdir (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int
 inumber (void *esp)
 {
-  thread_exit ();
+  exit (NULL);
 }
 
 static int (*syscalls []) (void *) =
@@ -416,14 +421,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 {
   void *esp = f->esp;
 
-  validate (esp, sizeof(int));
+  validate (esp, esp, sizeof(int));
   int syscall_num = *((int *) esp);
   esp += sizeof(int);
 
   /* printf("\nSys: %d", syscall_num); */
 
   /* Just for sanity, we will anyway be checking inside all functions. */ 
-  validate (esp, sizeof(void *));
+  validate (esp, esp, sizeof(void *));
 
   if (syscall_num >= 0 && syscall_num < num_calls)
   {
@@ -435,7 +440,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   {
     /* TODO:: Raise Exception */
     printf ("\nError, invalid syscall number.");
-    thread_exit ();
+    exit (NULL);
   }
 }
 
@@ -459,27 +464,50 @@ is_valid_fd (int fd)
 }
 
 static void
-validate_string (const char *s)
+validate_string (const void *esp, const char *s)
 {
-  validate (s, sizeof(char));
+  validate (esp, s, sizeof(char));
   while (*s != '\0')
-    validate (s++, sizeof(char));
+    validate (esp, s++, sizeof(char));
 }
 
 static void
-validate (const void *ptr, size_t size)
+validate (const void *esp, const void *ptr, size_t size)
 {
-  valid_up (ptr);
+  valid_up (esp, ptr);
   if(size != 1)
-    valid_up (ptr + size - 1);
+    valid_up (esp, ptr + size - 1);
 }
 
 static void
-valid_up (const void *ptr)
+valid_up (const void *esp, const void *ptr)
 {
   uint32_t *pd = thread_current ()->pagedir;
-  if ( ptr == NULL || !is_user_vaddr (ptr) || pagedir_get_page (pd, ptr) == NULL)
+  if (ptr == NULL || !is_user_vaddr (ptr))
   {
     exit (NULL);
   }
+  
+  if(pagedir_get_page (pd, ptr) == NULL)
+  {
+    struct spt_entry *spte = uvaddr_to_spt_entry (ptr);
+    if (spte != NULL)
+    {
+      if (!install_load_page (spte))
+        exit (NULL);
+    }
+    else if (!(ptr >= esp - STACK_HEURISTIC &&
+              grow_stack (ptr)))
+    {
+      exit (NULL);
+    }
+  }
+}
+
+static void
+is_writable (const void *ptr)
+{
+  struct spt_entry *spte = uvaddr_to_spt_entry (ptr);
+  if (spte->type == FILE && !spte->writable)
+    exit (NULL);
 }

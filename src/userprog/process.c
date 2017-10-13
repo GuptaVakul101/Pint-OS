@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "vm/frame.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -18,6 +17,8 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 const int WORD_SIZE = 4; /* Number of bytes per word */
 
@@ -352,7 +353,7 @@ load (const char *cmd_line_input, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
 
-              if (!load_segment (file, file_page, (void *) mem_page,
+              if (!create_spte_file (file, file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
             }
@@ -378,8 +379,6 @@ done:
 }
 
 /* load() helpers. */
-
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -492,77 +491,76 @@ setup_stack (void **esp, char *file_name, char *args)
 {
   uint8_t *kpage;
   bool success = false;
-  
+  /*
   kpage = frame_alloc (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success){
-        *esp = PHYS_BASE;
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);*/
 
-        /* Tokenize the string accross spaces (DELIMITER) */
-        char *token, *save_ptr;
-        int argc = 1;
-        char *argv[LOADER_ARGS_LEN / 2 + 1];
-        argv[0] = file_name;
+  success = grow_stack (((uint8_t *) PHYS_BASE) - PGSIZE);
+  if (success){
+    *esp = PHYS_BASE;
 
-        for (token = strtok_r (args, " ", &save_ptr); token != NULL;
-             token = strtok_r (NULL, " ", &save_ptr))
-        {
-          argv[argc] = token;
-          argc++;
-        }
-        argv[argc] = NULL;
+    /* Tokenize the string accross spaces (DELIMITER) */
+    char *token, *save_ptr;
+    int argc = 1;
+    char *argv[LOADER_ARGS_LEN / 2 + 1];
+    argv[0] = file_name;
 
-        /* Push the args to the stack */
-        int i, bytes_written = 0;
-        char *addr[LOADER_ARGS_LEN / 2 + 1];
-        size_t s;
-        
-        for (i = argc-1; i>=0; i--)
-        {
-          s = (strlen(argv[i]) + 1) * (sizeof (char));
-          *esp -= s;
-          memcpy (*esp, argv[i], s);
-          bytes_written += s;
-          addr[i] = (char *) *esp;
-        }
-        addr[argc] = NULL;
-
-        /* Align the stack pointer location to nearest WORD_SIZE multiple */
-        uint8_t nulls[3] = {0,0,0};
-        s = bytes_written % WORD_SIZE;
-        *esp -= s;
-        memcpy (*esp, nulls, s);
-
-        /* Push addresses of argv array. */
-        for (i = argc; i>=0; i--)
-        {
-          s = (sizeof (char *));
-          *esp -= s;
-          memcpy (*esp, addr + i, s);
-        }
-
-        /* Push argv start address. */
-        char *argv_starting = *esp; 
-        s = sizeof (argv_starting);
-        *esp -= s;
-        memcpy(*esp, &argv_starting, s);
-
-        /* Push argc. */
-        s = sizeof (int);
-        *esp -= s;
-        memcpy (*esp, &argc, s);
-
-        /* Push return address (UNUSED). */
-        argc = 0;
-        s = sizeof (void (*) ());
-        *esp -= s;
-        memcpy (*esp, &argc, s);
-      }
-      else
-        free_frame (kpage);
+    for (token = strtok_r (args, " ", &save_ptr); token != NULL;
+         token = strtok_r (NULL, " ", &save_ptr))
+    {
+      argv[argc] = token;
+      argc++;
     }
+    argv[argc] = NULL;
+
+    /* Push the args to the stack */
+    int i, bytes_written = 0;
+    char *addr[LOADER_ARGS_LEN / 2 + 1];
+    size_t s;
+        
+    for (i = argc-1; i>=0; i--)
+    {
+      s = (strlen(argv[i]) + 1) * (sizeof (char));
+      *esp -= s;
+      memcpy (*esp, argv[i], s);
+      bytes_written += s;
+      addr[i] = (char *) *esp;
+    }
+    addr[argc] = NULL;
+
+    /* Align the stack pointer location to nearest WORD_SIZE multiple */
+    uint8_t nulls[3] = {0,0,0};
+    s = bytes_written % WORD_SIZE;
+    *esp -= s;
+    memcpy (*esp, nulls, s);
+
+    /* Push addresses of argv array. */
+    for (i = argc; i>=0; i--)
+    {
+      s = (sizeof (char *));
+      *esp -= s;
+      memcpy (*esp, addr + i, s);
+    }
+
+    /* Push argv start address. */
+    char *argv_starting = *esp; 
+    s = sizeof (argv_starting);
+    *esp -= s;
+    memcpy(*esp, &argv_starting, s);
+
+    /* Push argc. */
+    s = sizeof (int);
+    *esp -= s;
+    memcpy (*esp, &argc, s);
+
+    /* Push return address (UNUSED). */
+    argc = 0;
+    s = sizeof (void (*) ());
+    *esp -= s;
+    memcpy (*esp, &argc, s);
+  }
   return success;
 }
 
@@ -575,7 +573,7 @@ setup_stack (void **esp, char *file_name, char *args)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();

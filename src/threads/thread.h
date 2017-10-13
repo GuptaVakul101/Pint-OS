@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
+#include "vm/page.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -118,6 +119,9 @@ struct thread
 
     struct file *executable_file;
     struct file *files[MAX_FILES];
+
+    struct hash supp_page_table;
+
     struct semaphore sema_ready;
     struct semaphore sema_terminated;
     struct semaphore sema_ack;
