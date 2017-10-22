@@ -119,6 +119,7 @@ struct thread
 
     struct file *executable_file;
     struct file *files[MAX_FILES];
+    struct spt_entry *mmap_files[MAX_FILES];
 
     struct hash supp_page_table;
 
