@@ -16,19 +16,47 @@ frame_table_init (void)
   lock_init (&frame_table_lock);
 }
 
+/* Unoptimized enhanced second-chance page replacement. */
+static struct frame_table_entry *
+get_victim_frame ()
+{
+  //4 classes 00 01 10 11 (Reference and dirty bits)
+  return NULL;
+}
+
+static void
+evict_frame (struct frame_table_entry *fte)
+{
+  struct spt_entry *spte = fte->spte;
+  switch (spte->type){
+  case FILE:
+  case MMAP:
+    //write to file if writable (write_to_disk)
+    break;
+  case CODE:
+    //swap_out
+    break;
+  default:
+    return false;
+  }
+}
+
 void *
 get_frame_for_page (enum palloc_flags flags, struct spt_entry *spte)
 {
+  if(spte == NULL)
+    return NULL;
+  
   if (flags & PAL_USER == 0)
     return NULL;
 
   void *frame = frame_alloc (flags);
 
-  if (frame != NULL && spte != NULL){
+  if (frame != NULL){
     add_to_frame_table (frame, spte);
     return frame;
   }
-  else return NULL;
+  else return NULL; /*Never Reached. */
 }
 
 static void
@@ -56,7 +84,7 @@ frame_alloc (enum palloc_flags flags)
     return frame;
   else
   {
-    //TODO:: add frame eviction logic
+    //Try to get victim, evict it (3 cases (SWAP, MMAP, EXEC FILE)) (change sptes, change pd entries) and alloc
     return NULL;
   }
 }
@@ -64,6 +92,7 @@ frame_alloc (enum palloc_flags flags)
 void
 free_frame (void *frame)
 {
-  //TODO:: remove from frame table
+  //Traverse list and find the frame entry corresponding to the frame address and remove it
+//  list_remove (&frame->list_elem);
   palloc_free_page (frame);
 }

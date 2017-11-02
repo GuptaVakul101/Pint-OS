@@ -20,8 +20,9 @@ struct spt_entry
                      installed and loaded (or being loaded). */
     struct hash_elem elem;
 
-    /* CODE */
+    /* CODE (SWAPPABLE) */
     bool is_in_swap;
+    size_t idx; /* Page index in swap partition. */
     
     /* FILE & MMAP */
     struct file *file;
