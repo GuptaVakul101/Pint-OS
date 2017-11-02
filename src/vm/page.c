@@ -1,5 +1,6 @@
 #include "vm/page.h"
 #include <malloc.h>
+#include <bitmap.h>
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -76,6 +77,7 @@ create_spte ()
   spte->frame = NULL;
   spte->upage = NULL;
   spte->is_in_swap = false;
+  spte->idx = BITMAP_ERROR;
   return spte;
 }
 
@@ -218,10 +220,14 @@ install_load_swap (struct spt_entry *spte)
   if (install_page (spte->upage, frame, true))
   {
     spte->frame = frame;
-    if (!spte->is_in_swap)
+    if (!spte->is_in_swap) /* Add empty page (stack growth). */
       return true;
     else
-      return false; //TODO:: swap_in
+    {
+      swap_in (spte);
+      spte->is_in_swap = false;
+      spte->idx = BITMAP_ERROR;
+    }
   }
   else
     free_frame (frame);

@@ -92,7 +92,7 @@ main (void)
   malloc_init ();
   paging_init ();
   frame_table_init ();
-  
+
   /* Segmentation. */
 #ifdef USERPROG
   tss_init ();
@@ -119,6 +119,7 @@ main (void)
   disk_init ();
   filesys_init (format_filesys);
 #endif
+  swap_init ();
 
   printf ("Boot complete.\n");
   
@@ -443,7 +444,7 @@ power_off (void)
 #ifdef FILESYS
   filesys_done ();
 #endif
-
+  swap_end ();
   print_stats ();
 
   printf ("Powering off...\n");
