@@ -22,10 +22,12 @@ frame_table_init (void)
   lock_init (&frame_table_lock);
 }
 
-/* Unoptimized enhanced second-chance page replacement. */
+/* Unoptimized enhanced second-chance page replacement. 
+   Called with frame_table_lock in aquired state. */
 static struct frame_table_entry *
 get_victim_frame ()
 {
+  ASSERT (lock_held_by_current_thread (&frame_table_lock));
   /* 4 classes (low priority) 00 01 10 11 (high priority) 
      (Reference (higher priority) and Dirty bits).
      We choose a frame in the order of priority given above 
@@ -185,8 +187,11 @@ frame_alloc (enum palloc_flags flags)
        frame table is full. Thus there will be a frame 
        that can be evicted in the table and thus fte will 
        always be non NULL. */
-    
+
+    lock_acquire (&frame_table_lock);
     struct frame_table_entry *fte = get_victim_frame ();
+    lock_release (&frame_table_lock);
+    
     if (evict_frame (fte)){
       frame = palloc_get_page (flags);
       ASSERT (frame != NULL);
@@ -202,6 +207,8 @@ free_frame (void *frame)
 {
   struct frame_table_entry *fte;
   struct list_elem *e;
+
+  lock_acquire (&frame_table_lock);
   for (e = list_begin (&frame_table);
        e != list_end (&frame_table);
        e = list_next (e))
@@ -213,14 +220,19 @@ free_frame (void *frame)
       break;
     }
   }
+  lock_release (&frame_table_lock);
+
   palloc_free_page (frame);
 }
 
 static void
 clear_frame_entry (struct frame_table_entry *fte)
 {
+  lock_acquire (&frame_table_lock);
   list_remove (&fte->elem);
+  lock_release (&frame_table_lock);
+
   pagedir_clear_page (fte->t->pagedir, fte->frame);
-  palloc_free_page (fte->frame);
+  palloc_free_page (fte->spte->upage);
   free (fte);
 }
