@@ -78,6 +78,7 @@ create_spte ()
   spte->upage = NULL;
   spte->is_in_swap = false;
   spte->idx = BITMAP_ERROR;
+  spte->pinned = false;
   return spte;
 }
 
@@ -176,6 +177,7 @@ static bool
 install_load_file (struct spt_entry *spte)
 {
   void *frame = get_frame_for_page (PAL_USER, spte);
+  ASSERT (frame != NULL);
 
   if (frame == NULL)
     return false;
@@ -213,21 +215,21 @@ static bool
 install_load_swap (struct spt_entry *spte)
 {
   void *frame = get_frame_for_page (PAL_USER | PAL_ZERO, spte);
-
+  ASSERT (frame != NULL);
+  
   if (frame == NULL)
     return false;
 
   if (install_page (spte->upage, frame, true))
   {
     spte->frame = frame;
-    if (!spte->is_in_swap) /* Add empty page (stack growth). */
-      return true;
-    else
+    if (spte->is_in_swap) /* Add empty page (stack growth). */
     {
       swap_in (spte);
       spte->is_in_swap = false;
       spte->idx = BITMAP_ERROR;
     }
+    return true;
   }
   else
     free_frame (frame);
@@ -315,7 +317,7 @@ void destroy_spt (struct hash *supp_page_table){
 }
 
 bool
-grow_stack (void *uaddr)
+grow_stack (void *uaddr, bool pinned)
 {
   void *upage = pg_round_down (uaddr);
 
@@ -323,10 +325,11 @@ grow_stack (void *uaddr)
     return false;
   
   struct spt_entry *spte = create_spte_code (upage);
+  spte->pinned = pinned;
   return install_load_page (spte);
 }
 
-/* spte is not NULL and is loaded i.e. a frame exists for it.*/
+/* spte is not NULL and is loaded i.e. a frame exists for it. */
 bool
 write_to_disk (struct spt_entry *spte)
 {

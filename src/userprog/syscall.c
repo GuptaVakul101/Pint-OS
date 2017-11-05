@@ -20,6 +20,33 @@ static bool is_valid_fd (int);
 static void is_writable (const void *);
 static bool is_valid_page (void *);
 
+static void
+unpin_buffer (void *buffer, unsigned size)
+{
+  uint32_t *pd = thread_current ()->pagedir;
+  struct spt_entry *spte = uvaddr_to_spt_entry (buffer);
+  if (spte != NULL)
+    spte->pinned = false;
+  spte = uvaddr_to_spt_entry (buffer + size -1);
+  if (spte != NULL)
+    spte->pinned = false;
+
+  int i;
+  for (i = PGSIZE; i < size; i += PGSIZE)
+  {
+    spte = uvaddr_to_spt_entry (buffer + i);
+    if (spte != NULL)
+      spte->pinned = false;
+  }
+}
+
+static void
+unpin_str (char *str)
+{
+  int l = strlen (str);
+  unpin_buffer ((void *) str, l);
+}
+
 static int
 halt (void *esp)
 {
@@ -88,14 +115,17 @@ exec (void *esp)
   lock_release (&file_lock);
   
   struct thread *child = get_child_thread_from_id (tid);
-  if (child == NULL)
+  if (child == NULL){
+    unpin_str (file_name);
     return -1;
+  }
   
   sema_down (&child->sema_ready);
   if (!child->load_complete)
     tid = -1;
   
   sema_up (&child->sema_ack);
+  unpin_str (file_name);
   return tid;
 }
 
@@ -137,6 +167,7 @@ create (void *esp)
   int status = filesys_create (file_name, initial_size);
   lock_release (&file_lock);
 
+  unpin_str (file_name);
   return status;
 }
 
@@ -152,7 +183,8 @@ remove (void *esp)
   lock_acquire (&file_lock);
   int status = filesys_remove (file_name);
   lock_release (&file_lock);
-
+  
+  unpin_str (file_name);
   return status;
 }
 
@@ -169,8 +201,10 @@ open (void *esp)
   struct file *f = filesys_open (file_name);
   lock_release (&file_lock);
 
-  if (f == NULL)
+  if (f == NULL){
+    unpin_str (file_name);
     return -1;
+  }
   
   struct thread *t = thread_current ();
 
@@ -183,10 +217,13 @@ open (void *esp)
     }
   }
 
+  int ret;
   if (i == MAX_FILES)
-    return -1;
+    ret = -1;
   else
-    return i;
+    ret = i;
+  unpin_str (file_name);
+  return ret;
 }
 
 static int
@@ -227,6 +264,7 @@ read (void *esp)
   validate (esp, buffer, size);
 
   struct thread *t = thread_current ();
+  int ret = 0;
   if (fd == STDIN_FILENO)
   {
     lock_acquire (&file_lock);
@@ -236,7 +274,7 @@ read (void *esp)
       *((uint8_t *) buffer+i) = input_getc ();
 
     lock_release (&file_lock);
-    return i;
+    ret = i;
   }
   else if (is_valid_fd (fd) && fd >=2 && t->files[fd] != NULL)
   {
@@ -244,9 +282,11 @@ read (void *esp)
     lock_acquire (&file_lock);
     int read = file_read (t->files[fd], buffer, size);
     lock_release (&file_lock);
-    return read;
+    ret = read;
   }
-  return 0;
+
+  unpin_buffer (buffer, size);
+  return ret;
 }
 
 static int
@@ -267,6 +307,7 @@ write (void *esp)
   validate (esp, buffer, size);
   
   struct thread *t = thread_current ();
+  int ret = 0;
   if (fd == STDOUT_FILENO)
   {
     /* putbuf (buffer, size); */
@@ -277,16 +318,27 @@ write (void *esp)
       putchar (*((char *) buffer + i));
 
     lock_release (&file_lock);
-    return i;
+    ret = i;
   }
   else if (is_valid_fd (fd) && fd >=2 && t->files[fd] != NULL)
   {
     lock_acquire (&file_lock);
     int written = file_write (t->files[fd], buffer, size);
     lock_release (&file_lock);
-    return written;
+    ret = written;
   }
-  return 0;
+    int status = 0;
+  if (esp != NULL){
+    validate (esp, esp, sizeof(int));
+    status = *((int *)esp);
+    esp += sizeof (int);
+  }
+  else {
+    status = -1;
+  }
+
+  unpin_buffer (buffer, size);
+  return ret;
 }
 
 static int
@@ -498,6 +550,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     printf ("\nError, invalid syscall number.");
     exit (NULL);
   }
+  unpin_buffer (f->esp, sizeof (esp));
 }
 
 static void
@@ -533,6 +586,10 @@ validate (const void *esp, const void *ptr, size_t size)
   valid_up (esp, ptr);
   if(size != 1)
     valid_up (esp, ptr + size - 1);
+
+  int i;
+  for (i = PGSIZE; i < size; i += PGSIZE)
+    valid_up (esp, ptr + i);
 }
 
 static void
@@ -544,19 +601,19 @@ valid_up (const void *esp, const void *ptr)
     exit (NULL);
   }
   
-  if(pagedir_get_page (pd, ptr) == NULL)
+  struct spt_entry *spte = uvaddr_to_spt_entry (ptr);
+  if (spte != NULL)
   {
-    struct spt_entry *spte = uvaddr_to_spt_entry (ptr);
-    if (spte != NULL)
-    {
-      if (!install_load_page (spte))
+    spte->pinned = true;
+    if (pagedir_get_page (pd, ptr) == NULL)
+      if(!install_load_page (spte))
         exit (NULL);
-    }
-    else if (!(ptr >= esp - STACK_HEURISTIC &&
-              grow_stack (ptr)))
-    {
+  }
+  else if (pagedir_get_page (pd, ptr) == NULL)
+  {
+    if(!(ptr >= esp - STACK_HEURISTIC &&
+         grow_stack (ptr, true)))
       exit (NULL);
-    }
   }
 }
 

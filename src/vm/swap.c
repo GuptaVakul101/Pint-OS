@@ -2,6 +2,7 @@
 #include "devices/disk.h"
 #include <bitmap.h>
 #include "vm/page.h"
+#include "userprog/process.h"
 
 static struct disk *swap_disk = NULL;
 /* Lock acquired whenever the swap table is accessed, no lock is required while 
@@ -32,16 +33,18 @@ swap_out (struct spt_entry *spte)
   {
     lock_acquire (&swap_lock);
     size_t idx = bitmap_scan_and_flip (swap_table, 0, 1, false);
-    lock_release (&swap_lock);
     if (idx != BITMAP_ERROR)
     {
       int i;
       for (i = 0; i<SECTORS_PER_PAGE; i++)
       {
-        disk_write (swap_table, idx * SECTORS_PER_PAGE + i,
-                    spte->frame + i * DISK_SECTOR_SIZE);
+        lock_acquire (&file_lock);
+        disk_write (swap_disk, (idx * SECTORS_PER_PAGE) + i,
+                    spte->frame + (i * DISK_SECTOR_SIZE));
+        lock_release (&file_lock);
       }
     }
+    lock_release (&swap_lock);
     return idx;
   }
   return BITMAP_ERROR;
@@ -54,14 +57,16 @@ swap_in (struct spt_entry *spte)
 {
   if (swap_table != NULL)
   {
+    lock_acquire (&swap_lock);
     size_t idx = spte->idx;
     int i;
     for (i = 0; i<SECTORS_PER_PAGE; i++)
     {
-      disk_read (swap_table, idx * SECTORS_PER_PAGE + i,
-                  spte->frame + i * DISK_SECTOR_SIZE);
+      lock_acquire (&file_lock);
+      disk_read (swap_disk, (idx * SECTORS_PER_PAGE) + i,
+                 spte->frame + (i * DISK_SECTOR_SIZE));
+      lock_release (&file_lock);
     }
-    lock_acquire (&swap_lock);
     bitmap_reset (swap_table, idx);
     lock_release (&swap_lock);
   }
