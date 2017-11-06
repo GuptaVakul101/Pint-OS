@@ -11,6 +11,7 @@
 static struct list frame_table;
 static struct lock frame_table_lock;
 
+static void add_to_frame_table (void *, struct spt_entry *);
 static void clear_frame_entry (struct frame_table_entry *);
 static void *frame_alloc (enum palloc_flags);
 bool evict_frame (struct frame_table_entry *);
@@ -20,6 +21,7 @@ frame_table_init (void)
 {
   list_init (&frame_table);
   lock_init (&frame_table_lock);
+  lock_init (&pin_lock);
 }
 
 /* Unoptimized enhanced second-chance page replacement. 
@@ -209,6 +211,7 @@ frame_alloc (enum palloc_flags flags)
     return frame;
   else
   {
+    lock_acquire (&pin_lock);
     lock_acquire (&frame_table_lock);
     do {
       if (list_empty (&frame_table))
@@ -236,6 +239,7 @@ frame_alloc (enum palloc_flags flags)
     } while (frame == NULL);
       
     lock_release (&frame_table_lock);
+    lock_release (&pin_lock);
     return frame;
   }
 }

@@ -10,6 +10,7 @@
 #include "userprog/process.h"
 #include "vm/page.h"
 #include "filesys/filesys.h"
+#include "vm/frame.h"
 
 static void syscall_handler (struct intr_frame *);
 static void valid_up (const void*, const void *);
@@ -23,6 +24,7 @@ static bool is_valid_page (void *);
 static void
 unpin_buffer (void *buffer, unsigned size)
 {
+  lock_acquire (&pin_lock);
   uint32_t *pd = thread_current ()->pagedir;
   struct spt_entry *spte = uvaddr_to_spt_entry (buffer);
   if (spte != NULL)
@@ -38,6 +40,7 @@ unpin_buffer (void *buffer, unsigned size)
     if (spte != NULL)
       spte->pinned = false;
   }
+  lock_release (&pin_lock);
 }
 
 static void
@@ -551,6 +554,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     exit (NULL);
   }
   unpin_buffer (f->esp, sizeof (esp));
+  unpin_buffer (f->esp+PGSIZE, sizeof (esp));
 }
 
 static void
@@ -600,11 +604,14 @@ valid_up (const void *esp, const void *ptr)
   {
     exit (NULL);
   }
-  
+
   struct spt_entry *spte = uvaddr_to_spt_entry (ptr);
   if (spte != NULL)
   {
+    lock_acquire (&pin_lock);
     spte->pinned = true;
+    lock_release (&pin_lock);
+
     if (pagedir_get_page (pd, ptr) == NULL)
       if(!install_load_page (spte))
         exit (NULL);

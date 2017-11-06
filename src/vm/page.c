@@ -7,6 +7,7 @@
 #include "threads/palloc.h"
 #include "userprog/process.h"
 #include "filesys/file.h"
+#include "vm/frame.h"
 
 static struct spt_entry* create_spte ();
 static bool install_load_file (struct spt_entry *);
@@ -325,7 +326,9 @@ grow_stack (void *uaddr, bool pinned)
     return false;
   
   struct spt_entry *spte = create_spte_code (upage);
+  lock_acquire (&pin_lock);
   spte->pinned = pinned;
+  lock_release (&pin_lock);
   return install_load_page (spte);
 }
 
