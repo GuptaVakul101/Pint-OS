@@ -177,11 +177,15 @@ create_spte_file (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 install_load_file (struct spt_entry *spte)
 {
+  lock_acquire (&evict_lock);
   void *frame = get_frame_for_page (PAL_USER, spte);
   ASSERT (frame != NULL);
 
   if (frame == NULL)
+  {
+    lock_release (&evict_lock);
     return false;
+  }
 
   /* Load this page. */
   lock_acquire (&file_lock);
@@ -192,6 +196,7 @@ install_load_file (struct spt_entry *spte)
   if (read_bytes != (int) spte->page_read_bytes)
   {
     free_frame (frame);
+    lock_release (&evict_lock);
     return false; 
   }
   memset (frame + spte->page_read_bytes, 0, spte->page_zero_bytes);
@@ -200,9 +205,11 @@ install_load_file (struct spt_entry *spte)
   if (!install_page (spte->upage, frame, spte->writable)) 
   {
     free_frame (frame);
+    lock_release (&evict_lock);
     return false; 
   }
   spte->frame = frame;
+  lock_release (&evict_lock);
   return true;
 }
 
@@ -215,11 +222,15 @@ install_load_mmap (struct spt_entry *spte)
 static bool
 install_load_swap (struct spt_entry *spte)
 {
+  lock_acquire (&evict_lock);
   void *frame = get_frame_for_page (PAL_USER | PAL_ZERO, spte);
   ASSERT (frame != NULL);
   
   if (frame == NULL)
+  {
+    lock_release (&evict_lock);
     return false;
+  }
 
   if (install_page (spte->upage, frame, true))
   {
@@ -230,11 +241,13 @@ install_load_swap (struct spt_entry *spte)
       spte->is_in_swap = false;
       spte->idx = BITMAP_ERROR;
     }
+    lock_release (&evict_lock);
     return true;
   }
   else
     free_frame (frame);
 
+  lock_release (&evict_lock);
   return false;
 }
 

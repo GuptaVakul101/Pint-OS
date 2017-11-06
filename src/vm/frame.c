@@ -22,6 +22,7 @@ frame_table_init (void)
   list_init (&frame_table);
   lock_init (&frame_table_lock);
   lock_init (&pin_lock);
+  lock_init (&evict_lock);
 }
 
 /* Unoptimized enhanced second-chance page replacement. 
